@@ -1,0 +1,27 @@
+{
+  "name": "Setus.HorrorFramework.Tests.EditMode",
+  "rootNamespace": "Setus.HorrorFramework.Tests.EditMode",
+  "references": [
+    "Setus.HorrorFramework.Runtime",
+    "Setus.HorrorFramework.Editor",
+    "Unity.InputSystem",
+    "Unity.Addressables",
+    "Unity.Localization",
+    "Unity.ResourceManager",
+    "Unity.RenderPipelines.Core.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "noEngineReferences": false
+}

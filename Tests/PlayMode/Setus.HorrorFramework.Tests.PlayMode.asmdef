@@ -1,0 +1,21 @@
+{
+  "name": "Setus.HorrorFramework.Tests.PlayMode",
+  "rootNamespace": "Setus.HorrorFramework.Tests.PlayMode",
+  "references": [
+    "Setus.HorrorFramework.Runtime",
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.InputSystem"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "noEngineReferences": false
+}

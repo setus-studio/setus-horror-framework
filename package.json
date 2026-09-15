@@ -1,0 +1,32 @@
+{
+  "name": "com.setus.horror-framework",
+  "version": "0.1.0",
+  "displayName": "Setus Horror Framework",
+  "description": "Reusable Unity horror framework systems for standalone first-person narrative horror games.",
+  "unity": "6000.0",
+  "author": {
+    "name": "Setus"
+  },
+  "dependencies": {
+    "com.unity.ai.navigation": "2.0.14",
+    "com.unity.inputsystem": "1.19.0",
+    "com.unity.localization": "1.5.13",
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.render-pipelines.universal": "17.0.4",
+    "com.unity.test-framework": "1.6.0",
+    "com.unity.ugui": "2.0.0"
+  },
+  "keywords": [
+    "horror",
+    "framework",
+    "first-person",
+    "narrative"
+  ],
+  "samples": [
+    {
+      "displayName": "First Person Horror Template",
+      "description": "A regeneratable standalone-game template covering interaction, narrative, scares, AI, checkpoints, save/load, and the UI shell.",
+      "path": "Samples~/FirstPersonHorrorTemplate"
+    }
+  ]
+}
