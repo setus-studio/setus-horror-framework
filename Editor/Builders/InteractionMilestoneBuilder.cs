@@ -140,10 +140,9 @@ namespace Setus.HorrorFramework.Editor.Builders
                 interactor.ConfigureRayOrigin(camera.transform);
             }
 
-            var interactAction = inputActions != null ? inputActions.FindAction("Player/Interact", false) : null;
-            if (interactAction != null)
+            if (inputActions != null && inputActions.FindAction("Player/Interact", false) != null)
             {
-                interactor.ConfigureInteractAction(interactAction);
+                interactor.ConfigureActionsAsset(inputActions);
             }
         }
 

@@ -86,6 +86,25 @@ namespace Setus.HorrorFramework.UI.Settings
         public void SetLocaleCode(string value) => Replace(localeCode: value);
         public void SetInputBindingOverridesJson(string value) => Replace(inputBindingOverridesJson: value);
 
+        public void SetDisplaySettings(DisplaySettingsState value)
+        {
+            if (value == null)
+                throw new ArgumentException("Display settings must not be null.", nameof(value));
+            if (!value.TryValidate(out var reason))
+                throw new ArgumentException(reason, nameof(value));
+            Replace(displaySettings: value);
+        }
+
+        public void ResetAudioDefaults() => Replace(
+            masterVolume: 1f, ambienceVolume: 1f, sfxVolume: 1f, uiVolume: 1f, voiceVolume: 1f);
+
+        public void ResetMovementDefaults() => Replace(
+            mouseSensitivity: 1f, sprintInputMode: SprintInputMode.Hold);
+
+        public void ResetAccessibilityDefaults() => Replace(
+            subtitlesEnabled: true, brightness: 0.5f, cameraShakeIntensity: 1f,
+            headBobEnabled: true, headBobIntensity: 1f);
+
         public override RuntimeSettingsState CaptureState()
         {
             return state;
@@ -216,6 +235,12 @@ namespace Setus.HorrorFramework.UI.Settings
                 return RestoreStateValidationResult.Invalid(bindingDiagnostic);
             }
 
+            if (settings.DisplaySettings != null &&
+                !settings.DisplaySettings.TryValidate(out var displayDiagnostic))
+            {
+                return RestoreStateValidationResult.Invalid(displayDiagnostic);
+            }
+
             return RestoreStateValidationResult.Success;
         }
 
@@ -233,7 +258,8 @@ namespace Setus.HorrorFramework.UI.Settings
             float? headBobIntensity = null,
             SprintInputMode? sprintInputMode = null,
             string localeCode = null,
-            string inputBindingOverridesJson = null)
+            string inputBindingOverridesJson = null,
+            DisplaySettingsState displaySettings = null)
         {
             var replacement = new RuntimeSettingsState(
                 masterVolume ?? state.MasterVolume,
@@ -249,7 +275,8 @@ namespace Setus.HorrorFramework.UI.Settings
                 headBobIntensity ?? state.HeadBobIntensity,
                 sprintInputMode ?? state.SprintInputMode,
                 localeCode ?? state.LocaleCode,
-                inputBindingOverridesJson ?? state.InputBindingOverridesJson);
+                inputBindingOverridesJson ?? state.InputBindingOverridesJson,
+                displaySettings ?? state.DisplaySettings);
             ApplyState(replacement, false);
             if (userSettingsStore != null)
             {

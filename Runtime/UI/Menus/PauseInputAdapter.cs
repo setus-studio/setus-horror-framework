@@ -9,10 +9,14 @@ namespace Setus.HorrorFramework.UI.Menus
     public sealed class PauseInputAdapter : MonoBehaviour
     {
         [SerializeField] private bool escapeTogglesPause = true;
+        [SerializeField] private InputActionAsset actionsAsset;
+        [SerializeField] private string pauseActionPath = "Player/Pause";
 
         private PauseFlowController pauseFlow;
         private CursorInputModeCoordinator inputModes;
         private UiShellStateOwner uiShell;
+        private InputAction pauseAction;
+        private bool enabledPauseAction;
 
         private void Awake()
         {
@@ -22,15 +26,36 @@ namespace Setus.HorrorFramework.UI.Menus
             uiShell = context.Services.GetRequired<UiShellStateOwner>();
         }
 
+        private void OnEnable()
+        {
+            pauseAction = actionsAsset != null ? actionsAsset.FindAction(pauseActionPath, false) : null;
+            enabledPauseAction = pauseAction != null && !pauseAction.enabled;
+            if (enabledPauseAction)
+            {
+                pauseAction.Enable();
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (enabledPauseAction && pauseAction != null && pauseAction.enabled)
+            {
+                pauseAction.Disable();
+            }
+            pauseAction = null;
+            enabledPauseAction = false;
+        }
+
         private void Update()
         {
-            if (!escapeTogglesPause)
+            if (!escapeTogglesPause && pauseAction == null)
             {
                 return;
             }
 
             var keyboard = Keyboard.current;
-            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            if ((pauseAction != null && pauseAction.WasPressedThisFrame()) ||
+                (escapeTogglesPause && keyboard != null && keyboard.escapeKey.wasPressedThisFrame))
             {
                 TogglePauseFromKeyboard();
             }

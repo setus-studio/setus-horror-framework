@@ -1,9 +1,14 @@
 using System.Linq;
 using NUnit.Framework;
 using Setus.HorrorFramework.Accessibility.Display;
+using Setus.HorrorFramework.Atmosphere.Audio;
+using Setus.HorrorFramework.Audio.Settings;
 using Setus.HorrorFramework.Editor.Validators;
+using Setus.HorrorFramework.Editor.Builders;
 using Setus.HorrorFramework.Localization;
 using Setus.HorrorFramework.UI.Settings;
+using Setus.HorrorFramework.UI.Settings.Display;
+using Setus.HorrorFramework.UI.Menus;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -18,6 +23,50 @@ namespace Setus.HorrorFramework.Tests.EditMode.Accessibility
         {
             var issues = AccessibilityContentValidator.ValidateProject();
             Assert.That(issues, Is.Empty, string.Join("\n", issues));
+        }
+
+        [Test]
+        public void ProductionControlsValidationRejectsMissingPauseActionAsset()
+        {
+            var root = PrefabUtility.LoadPrefabContents(SceneFlowUiShellTemplateBuilder.UiShellPrefabPath);
+            try
+            {
+                var pause = root.GetComponent<PauseInputAdapter>();
+                Assert.IsNotNull(pause);
+                var serialized = new SerializedObject(pause);
+                serialized.FindProperty("actionsAsset").objectReferenceValue = null;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var issues = AccessibilityContentValidator.ValidateUiShellReferences(root);
+                Assert.That(issues.Any(issue => issue.Contains("PauseInputAdapter.actionsAsset")),
+                    Is.True, string.Join("\n", issues));
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        [Test]
+        public void DisplayValidationRejectsMissingConfirmationReference()
+        {
+            var root = PrefabUtility.LoadPrefabContents(SceneFlowUiShellTemplateBuilder.UiShellPrefabPath);
+            try
+            {
+                var display = root.GetComponentInChildren<DisplaySettingsPresenter>(true);
+                Assert.IsNotNull(display, "Run Apply Display Settings before this validation test.");
+                var serialized = new SerializedObject(display);
+                serialized.FindProperty("keep").objectReferenceValue = null;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var issues = AccessibilityContentValidator.ValidateUiShellReferences(root);
+                Assert.That(issues.Any(issue => issue.Contains("field 'keep'")),
+                    Is.True, string.Join("\n", issues));
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
         }
 
         [Test]
@@ -130,6 +179,109 @@ namespace Setus.HorrorFramework.Tests.EditMode.Accessibility
                 Object.DestroyImmediate(root);
                 Object.DestroyImmediate(other);
             }
+        }
+
+        [Test]
+        public void OneAudioVolumeConsumerPassesValidation()
+        {
+            var shell = CreateAudioShell(("SFXVolumeRow", true, true));
+            var sourceOwner = new GameObject("SfxSource");
+            try
+            {
+                sourceOwner.AddComponent<AudioSource>();
+                sourceOwner.AddComponent<AudioSourceSettingsBinding>();
+
+                var issues = AccessibilityContentValidator.ValidateAudioSettingsReferences(
+                    shell, new[] { sourceOwner });
+
+                Assert.That(issues, Is.Empty, string.Join("\n", issues));
+            }
+            finally
+            {
+                Object.DestroyImmediate(shell);
+                Object.DestroyImmediate(sourceOwner);
+            }
+        }
+
+        [Test]
+        public void DuplicateAudioVolumeConsumersOnOneSourceFailValidation()
+        {
+            var sourceOwner = new GameObject("DuplicateSfxSource");
+            try
+            {
+                var source = sourceOwner.AddComponent<AudioSource>();
+                sourceOwner.AddComponent<AudioSourceSettingsBinding>();
+                var scare = sourceOwner.AddComponent<ScareAudioCueHook>();
+                var serialized = new SerializedObject(scare);
+                serialized.FindProperty("cueSource").objectReferenceValue = source;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var issues = AccessibilityContentValidator.ValidateAudioSettingsReferences(
+                    null, new[] { sourceOwner });
+
+                Assert.That(issues.Any(issue =>
+                    issue.Contains("multiple settings volume consumers") &&
+                    issue.Contains(nameof(AudioSourceSettingsBinding)) &&
+                    issue.Contains(nameof(ScareAudioCueHook))), Is.True, string.Join("\n", issues));
+            }
+            finally
+            {
+                Object.DestroyImmediate(sourceOwner);
+            }
+        }
+
+        [Test]
+        public void ActiveAudioCategoryWithoutConsumerFailsValidation()
+        {
+            var shell = CreateAudioShell(("VoiceVolumeRow", true, true));
+            try
+            {
+                var issues = AccessibilityContentValidator.ValidateAudioSettingsReferences(
+                    shell, new GameObject[0]);
+
+                Assert.That(issues.Any(issue =>
+                    issue.Contains("Voice audio category") &&
+                    issue.Contains("matching volume consumer")), Is.True, string.Join("\n", issues));
+            }
+            finally
+            {
+                Object.DestroyImmediate(shell);
+            }
+        }
+
+        [Test]
+        public void HiddenOrDisabledOptionalAudioCategoriesPassValidation()
+        {
+            var shell = CreateAudioShell(
+                ("UIVolumeRow", true, false),
+                ("VoiceVolumeRow", false, true));
+            try
+            {
+                var issues = AccessibilityContentValidator.ValidateAudioSettingsReferences(
+                    shell, new GameObject[0]);
+
+                Assert.That(issues, Is.Empty, string.Join("\n", issues));
+            }
+            finally
+            {
+                Object.DestroyImmediate(shell);
+            }
+        }
+
+        private static GameObject CreateAudioShell(
+            params (string Name, bool Active, bool Interactable)[] rows)
+        {
+            var shell = new GameObject("AudioSettingsShell", typeof(RectTransform));
+            foreach (var rowDefinition in rows)
+            {
+                var row = new GameObject(rowDefinition.Name, typeof(RectTransform));
+                row.transform.SetParent(shell.transform, false);
+                var sliderOwner = new GameObject("Slider", typeof(RectTransform), typeof(Slider));
+                sliderOwner.transform.SetParent(row.transform, false);
+                sliderOwner.GetComponent<Slider>().interactable = rowDefinition.Interactable;
+                row.SetActive(rowDefinition.Active);
+            }
+            return shell;
         }
     }
 }

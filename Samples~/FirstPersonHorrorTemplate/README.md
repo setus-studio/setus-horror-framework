@@ -14,6 +14,25 @@ not contain final game art or audio.
 The command is safe to run again. It repairs missing canonical content, keeps existing asset
 GUIDs, merges its Stable ID declarations without deleting unrelated entries, and validates the
 generated Gameplay scene before reporting success.
+The host project must have a URP asset assigned in Project Settings > Graphics or Quality.
+The builder creates missing `Low`, `Medium`, and `High` Quality levels and game-owned URP assets
+under `Assets/Game/Settings/Graphics`. Existing assets, Quality levels, and authored values are
+left unchanged; a wrong existing Quality-to-URP mapping is reported for manual correction.
+Existing noncanonical Quality levels are also retained. Inspect Project Settings > Quality and
+run `Setus > Horror Framework > Validation > Validate M11 Accessibility And Localization`
+before a production build.
+It also applies the package's tabbed Settings layout to the generated UI shell. For an existing
+M11 UI shell outside this sample, run `Setus > Horror Framework > Settings > Apply Production Controls`
+and then `Setus > Horror Framework > Settings > Apply Phase 6 Graphics Settings`.
+Display changes require Keep confirmation and automatically revert after 15 seconds;
+validate Exclusive Fullscreen in a
+Windows standalone player rather than only in the Editor Game view.
+The sample builder also creates the seven-locale Phase 5 table/profile structure. Import licensed
+fonts into `Assets/Game/Localization/Fonts`, assign them in `GameLocaleFontProfile.asset`, then run
+`Setus > Horror Framework > Validation > Validate Phase 5 Localization Rollout`; unready locales
+remain hidden rather than rendering missing glyphs.
+The prefab stays in `Assets/Game/Prefabs/UI` so a game can replace its visuals without editing
+the package; the presenter and builder source stay in the package.
 
 ## Play Flow
 

@@ -12,7 +12,9 @@ namespace Setus.HorrorFramework.Localization
             }
 
             var initialization = LocalizationSettings.InitializationOperation;
-            if (!initialization.IsDone || initialization.Status != UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationStatus.Succeeded)
+            if (!initialization.IsDone ||
+                initialization.Status != UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationStatus.Succeeded ||
+                LocalizationSettings.SelectedLocale == null)
             {
                 return reference.FallbackText;
             }

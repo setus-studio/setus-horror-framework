@@ -109,6 +109,10 @@ namespace Setus.HorrorFramework.Editor.Builders
             interact.AddBinding("<Keyboard>/e");
             interact.AddBinding("<Gamepad>/buttonSouth");
 
+            var pause = playerMap.AddAction("Pause", InputActionType.Button);
+            pause.expectedControlType = "Button";
+            pause.AddBinding("<Keyboard>/escape");
+
             templateAsset.AddActionMap(playerMap);
             File.WriteAllText(inputActionsPath, templateAsset.ToJson());
             Object.DestroyImmediate(templateAsset);
@@ -136,6 +140,20 @@ namespace Setus.HorrorFramework.Editor.Builders
             var existing = AssetDatabase.LoadAssetAtPath<GameObject>(playerPrefabPath);
             if (existing != null)
             {
+                var contents = PrefabUtility.LoadPrefabContents(playerPrefabPath);
+                try
+                {
+                    var interactor = contents.GetComponent<RaycastInteractor>();
+                    if (interactor != null && interactor.ActionsAsset == null)
+                    {
+                        interactor.ConfigureActionsAsset(inputActions);
+                        PrefabUtility.SaveAsPrefabAsset(contents, playerPrefabPath);
+                    }
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(contents);
+                }
                 return existing;
             }
 
@@ -185,11 +203,7 @@ namespace Setus.HorrorFramework.Editor.Builders
 
                 var interactor = root.AddComponent<RaycastInteractor>();
                 interactor.ConfigureRayOrigin(cameraObject.transform);
-                var interactAction = inputActions.FindAction("Player/Interact", false);
-                if (interactAction != null)
-                {
-                    interactor.ConfigureInteractAction(interactAction);
-                }
+                interactor.ConfigureActionsAsset(inputActions);
 
                 var prefab = PrefabUtility.SaveAsPrefabAsset(root, playerPrefabPath);
                 return prefab;

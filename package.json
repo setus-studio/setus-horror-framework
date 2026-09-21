@@ -1,6 +1,6 @@
 {
   "name": "com.setus.horror-framework",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "displayName": "Setus Horror Framework",
   "description": "Reusable Unity horror framework systems for standalone first-person narrative horror games.",
   "unity": "6000.0",

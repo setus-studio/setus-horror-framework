@@ -1,6 +1,8 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.Localization;
 using UnityEngine.Localization.Settings;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.UI;
 
 namespace Setus.HorrorFramework.Localization
@@ -13,6 +15,10 @@ namespace Setus.HorrorFramework.Localization
         [SerializeField] private string tableCollection = LocalizedTextReference.DefaultTable;
         [SerializeField] private string entryKey;
         [SerializeField, TextArea] private string fallbackText;
+
+        private AsyncOperationHandle<LocalizationSettings> initialization;
+        private bool waitingForInitialization;
+        private Coroutine pendingRefresh;
 
         private void Awake()
         {
@@ -30,6 +36,15 @@ namespace Setus.HorrorFramework.Localization
             }
 
             Refresh();
+            if (LocalizationSettings.HasSettings)
+            {
+                initialization = LocalizationSettings.InitializationOperation;
+                if (!initialization.IsDone)
+                {
+                    waitingForInitialization = true;
+                    initialization.Completed += OnLocalizationInitialized;
+                }
+            }
         }
 
         private void OnDisable()
@@ -37,6 +52,18 @@ namespace Setus.HorrorFramework.Localization
             if (LocalizationSettings.HasSettings)
             {
                 LocalizationSettings.SelectedLocaleChanged -= OnLocaleChanged;
+            }
+
+            if (waitingForInitialization)
+            {
+                initialization.Completed -= OnLocalizationInitialized;
+                waitingForInitialization = false;
+            }
+
+            if (pendingRefresh != null)
+            {
+                StopCoroutine(pendingRefresh);
+                pendingRefresh = null;
             }
         }
 
@@ -58,6 +85,36 @@ namespace Setus.HorrorFramework.Localization
             }
         }
 
-        private void OnLocaleChanged(Locale _) => Refresh();
+        private void OnLocaleChanged(Locale _) => ScheduleRefresh();
+
+        private void OnLocalizationInitialized(AsyncOperationHandle<LocalizationSettings> _)
+        {
+            waitingForInitialization = false;
+            ScheduleRefresh();
+        }
+
+        private void ScheduleRefresh()
+        {
+            if (!Application.isPlaying)
+            {
+                Refresh();
+                return;
+            }
+
+            if (pendingRefresh == null)
+            {
+                pendingRefresh = StartCoroutine(RefreshNextFrame());
+            }
+        }
+
+        private IEnumerator RefreshNextFrame()
+        {
+            yield return null;
+            pendingRefresh = null;
+            if (isActiveAndEnabled)
+            {
+                Refresh();
+            }
+        }
     }
 }

@@ -1,4 +1,5 @@
 using Setus.HorrorFramework.Core.Services;
+using System.Globalization;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -13,6 +14,11 @@ namespace Setus.HorrorFramework.UI.Settings
         [SerializeField] private Slider sfxVolume;
         [SerializeField] private Slider uiVolume;
         [SerializeField] private Slider voiceVolume;
+        [SerializeField] private Text masterVolumeValue;
+        [SerializeField] private Text ambienceVolumeValue;
+        [SerializeField] private Text sfxVolumeValue;
+        [SerializeField] private Text uiVolumeValue;
+        [SerializeField] private Text voiceVolumeValue;
 
         [Header("Accessibility")]
         [SerializeField] private Toggle subtitlesEnabled;
@@ -23,6 +29,10 @@ namespace Setus.HorrorFramework.UI.Settings
         [SerializeField] private Toggle sprintToggle;
         [SerializeField] private Slider mouseSensitivity;
         [SerializeField] private InputField localeCode;
+        [SerializeField] private Text brightnessValue;
+        [SerializeField] private Text cameraShakeValue;
+        [SerializeField] private Text headBobIntensityValue;
+        [SerializeField] private Text mouseSensitivityValue;
 
         private RuntimeSettingsModel settings;
 
@@ -57,6 +67,9 @@ namespace Setus.HorrorFramework.UI.Settings
             value ? SprintInputMode.Toggle : SprintInputMode.Hold);
         public void SetMouseSensitivity(float value) => settings?.SetMouseSensitivity(value);
         public void SetLocaleCode(string value) => settings?.SetLocaleCode(value);
+        public void ResetAudioDefaults() => settings?.ResetAudioDefaults();
+        public void ResetMovementDefaults() => settings?.ResetMovementDefaults();
+        public void ResetAccessibilityDefaults() => settings?.ResetAccessibilityDefaults();
 
         private void Refresh(RuntimeSettingsState state)
         {
@@ -73,6 +86,30 @@ namespace Setus.HorrorFramework.UI.Settings
             sprintToggle?.SetIsOnWithoutNotify(state.SprintInputMode == SprintInputMode.Toggle);
             mouseSensitivity?.SetValueWithoutNotify(state.MouseSensitivity);
             localeCode?.SetTextWithoutNotify(state.LocaleCode);
+            SetPercent(masterVolumeValue, state.MasterVolume);
+            SetPercent(ambienceVolumeValue, state.AmbienceVolume);
+            SetPercent(sfxVolumeValue, state.SfxVolume);
+            SetPercent(uiVolumeValue, state.UiVolume);
+            SetPercent(voiceVolumeValue, state.VoiceVolume);
+            SetPercent(brightnessValue, state.Brightness);
+            SetPercent(cameraShakeValue, state.CameraShakeIntensity);
+            SetPercent(headBobIntensityValue, state.HeadBobIntensity);
+            if (mouseSensitivityValue != null)
+            {
+                mouseSensitivityValue.text = state.MouseSensitivity.ToString("0.0#", CultureInfo.CurrentCulture);
+            }
+            if (headBobIntensity != null)
+            {
+                headBobIntensity.interactable = state.HeadBobEnabled;
+            }
+        }
+
+        private static void SetPercent(Text label, float value)
+        {
+            if (label != null)
+            {
+                label.text = Mathf.RoundToInt(value * 100f).ToString(CultureInfo.CurrentCulture) + "%";
+            }
         }
     }
 }

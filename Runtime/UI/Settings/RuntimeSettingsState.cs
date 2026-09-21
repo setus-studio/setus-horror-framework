@@ -20,7 +20,8 @@ namespace Setus.HorrorFramework.UI.Settings
             float headBobIntensity = 1f,
             SprintInputMode sprintInputMode = SprintInputMode.Hold,
             string localeCode = "en",
-            string inputBindingOverridesJson = "")
+            string inputBindingOverridesJson = "",
+            DisplaySettingsState displaySettings = null)
         {
             MasterVolume = Mathf.Clamp01(masterVolume);
             MouseSensitivity = Mathf.Max(0.01f, mouseSensitivity);
@@ -36,6 +37,7 @@ namespace Setus.HorrorFramework.UI.Settings
             SprintInputMode = sprintInputMode;
             LocaleCode = string.IsNullOrWhiteSpace(localeCode) ? "en" : localeCode.Trim();
             InputBindingOverridesJson = inputBindingOverridesJson ?? string.Empty;
+            DisplaySettings = displaySettings;
         }
 
         [SerializeField] private float masterVolume;
@@ -52,6 +54,7 @@ namespace Setus.HorrorFramework.UI.Settings
         [SerializeField] private SprintInputMode sprintInputMode;
         [SerializeField] private string localeCode;
         [SerializeField, TextArea] private string inputBindingOverridesJson;
+        [SerializeField] private DisplaySettingsState displaySettings;
 
         public float MasterVolume
         {
@@ -85,6 +88,14 @@ namespace Setus.HorrorFramework.UI.Settings
         {
             get => inputBindingOverridesJson ?? string.Empty;
             private set => inputBindingOverridesJson = value;
+        }
+
+        public DisplaySettingsState DisplaySettings
+        {
+            get => displaySettings != null && displaySettings.HasConfiguration
+                ? displaySettings
+                : null;
+            private set => displaySettings = value;
         }
     }
 }

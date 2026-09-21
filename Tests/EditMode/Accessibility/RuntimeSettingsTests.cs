@@ -11,8 +11,10 @@ using Setus.HorrorFramework.SaveProgression.Registry;
 using Setus.HorrorFramework.SaveProgression.SaveSlots;
 using Setus.HorrorFramework.SaveProgression.Serialization;
 using Setus.HorrorFramework.UI.Settings;
+using Setus.HorrorFramework.UI.Settings.Display;
 using Setus.HorrorFramework.UI.Settings.Persistence;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace Setus.HorrorFramework.Tests.EditMode.Accessibility
 {
@@ -51,6 +53,241 @@ namespace Setus.HorrorFramework.Tests.EditMode.Accessibility
             Assert.That(owner.Current.SprintInputMode, Is.EqualTo(SprintInputMode.Toggle));
             Assert.That(owner.Current.LocaleCode, Is.EqualTo("vi"));
             Assert.That(owner.Current.InputBindingOverridesJson, Does.Contain("bindings"));
+        }
+
+        [Test]
+        public void TabResetsRestoreOnlyTheirOwnedPreferences()
+        {
+            var owner = new RuntimeSettingsModel();
+            owner.SetMasterVolume(0.2f);
+            owner.SetAmbienceVolume(0.3f);
+            owner.SetSfxVolume(0.4f);
+            owner.SetUiVolume(0.5f);
+            owner.SetVoiceVolume(0.6f);
+            owner.SetMouseSensitivity(2f);
+            owner.SetSprintInputMode(SprintInputMode.Toggle);
+            owner.SetBrightness(0.1f);
+            owner.SetSubtitlesEnabled(false);
+            owner.SetCameraShakeIntensity(0.2f);
+            owner.SetHeadBobEnabled(false);
+            owner.SetHeadBobIntensity(0.3f);
+            owner.SetLocaleCode("vi");
+            owner.SetInputBindingOverridesJson("{\"bindings\":[]}");
+            var changes = 0;
+            owner.Changed += _ => changes++;
+
+            owner.ResetAudioDefaults();
+            Assert.That(owner.Current.MasterVolume, Is.EqualTo(1f));
+            Assert.That(owner.Current.AmbienceVolume, Is.EqualTo(1f));
+            Assert.That(owner.Current.SfxVolume, Is.EqualTo(1f));
+            Assert.That(owner.Current.UiVolume, Is.EqualTo(1f));
+            Assert.That(owner.Current.VoiceVolume, Is.EqualTo(1f));
+            Assert.That(owner.Current.MouseSensitivity, Is.EqualTo(2f));
+            Assert.That(owner.Current.Brightness, Is.EqualTo(0.1f).Within(0.001f));
+
+            owner.ResetMovementDefaults();
+            Assert.That(owner.Current.MouseSensitivity, Is.EqualTo(1f));
+            Assert.That(owner.Current.SprintInputMode, Is.EqualTo(SprintInputMode.Hold));
+            Assert.That(owner.Current.Brightness, Is.EqualTo(0.1f).Within(0.001f));
+
+            owner.ResetAccessibilityDefaults();
+            Assert.That(owner.Current.SubtitlesEnabled, Is.True);
+            Assert.That(owner.Current.Brightness, Is.EqualTo(0.5f));
+            Assert.That(owner.Current.CameraShakeIntensity, Is.EqualTo(1f));
+            Assert.That(owner.Current.HeadBobEnabled, Is.True);
+            Assert.That(owner.Current.HeadBobIntensity, Is.EqualTo(1f));
+            Assert.That(owner.Current.LocaleCode, Is.EqualTo("vi"));
+            Assert.That(owner.Current.InputBindingOverridesJson, Is.EqualTo("{\"bindings\":[]}"));
+            Assert.That(changes, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void RebindConflictRejectsDuplicateAndReservedEscapeWithoutChangingOtherBindings()
+        {
+            var asset = ScriptableObject.CreateInstance<InputActionAsset>();
+            try
+            {
+                var map = new InputActionMap("Player");
+                var move = map.AddAction("Move");
+                move.AddBinding("<Keyboard>/w");
+                var interact = map.AddAction("Interact");
+                interact.AddBinding("<Keyboard>/e");
+                var pause = map.AddAction("Pause");
+                pause.AddBinding("<Keyboard>/escape");
+                asset.AddActionMap(map);
+
+                move.ApplyBindingOverride(0, "<Keyboard>/e");
+                Assert.That(InputRebindPresenter.TryFindConflict(asset, move, 0, out var conflict), Is.True);
+                Assert.That(conflict, Does.Contain("Interact"));
+                Assert.That(interact.bindings[0].effectivePath, Is.EqualTo("<Keyboard>/e"));
+
+                pause.ApplyBindingOverride(0, "<Keyboard>/p");
+                move.ApplyBindingOverride(0, "<Keyboard>/escape");
+                Assert.That(InputRebindPresenter.TryFindConflict(asset, move, 0, out conflict), Is.True);
+                Assert.That(conflict, Does.Contain("Pause"));
+
+                move.ApplyBindingOverride(0, "<Keyboard>/upArrow");
+                Assert.That(InputRebindPresenter.TryFindConflict(asset, move, 0, out _), Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(asset);
+            }
+        }
+
+        [Test]
+        public void DisplayPreviewCommitsOnlyAfterConfirmation()
+        {
+            var owner = new RuntimeSettingsModel();
+            var baseline = Display(GameDisplayMode.Windowed, 1280, 720, false, 60, "Medium");
+            var candidate = Display(GameDisplayMode.Borderless, 1920, 1080, true, 0, "High");
+            var device = new FakeDisplaySettingsDevice(baseline);
+            var preview = new DisplaySettingsPreviewSession(owner, device);
+
+            Assert.That(preview.Begin(candidate, 10f), Is.True);
+            Assert.That(device.Current, Is.SameAs(candidate));
+            Assert.That(owner.Current.DisplaySettings, Is.Null);
+            Assert.That(preview.Confirm(10.1f), Is.False);
+            Assert.That(preview.Confirm(10.3f), Is.True);
+
+            Assert.That(owner.Current.DisplaySettings, Is.SameAs(candidate));
+            Assert.That(preview.IsActive, Is.False);
+        }
+
+        [Test]
+        public void DisplayPreviewTimeoutRestoresExactRuntimeBaselineWithoutCommitting()
+        {
+            var owner = new RuntimeSettingsModel();
+            var baseline = Display(GameDisplayMode.Fullscreen, 1920, 1080, true, 10, "High");
+            var candidate = Display(GameDisplayMode.Windowed, 1280, 720, false, 60, "Low");
+            var device = new FakeDisplaySettingsDevice(baseline);
+            var preview = new DisplaySettingsPreviewSession(owner, device);
+
+            Assert.That(preview.Begin(candidate, 2f), Is.True);
+            Assert.That(preview.Tick(17f), Is.EqualTo(DisplayPreviewResult.TimedOut));
+
+            Assert.That(device.Current, Is.SameAs(baseline));
+            Assert.That(owner.Current.DisplaySettings, Is.Null);
+            Assert.That(device.ApplyCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void AntiAliasingPreviewRevertRestoresPreviousModeWithoutSaving()
+        {
+            var owner = new RuntimeSettingsModel();
+            var baseline = new DisplaySettingsState(GameDisplayMode.Windowed,
+                1280, 720, 0, 0, 0, 60, "High", GameAntiAliasingMode.Fxaa);
+            var candidate = new DisplaySettingsState(GameDisplayMode.Windowed,
+                1280, 720, 0, 0, 0, 60, "Low", GameAntiAliasingMode.Smaa);
+            var device = new FakeDisplaySettingsDevice(baseline);
+            var preview = new DisplaySettingsPreviewSession(owner, device);
+
+            Assert.That(preview.Begin(candidate, 0f), Is.True);
+            Assert.That(device.Current.AntiAliasing, Is.EqualTo(GameAntiAliasingMode.Smaa));
+            Assert.That(preview.Revert(), Is.EqualTo(DisplayPreviewResult.Reverted));
+            Assert.That(device.Current.AntiAliasing, Is.EqualTo(GameAntiAliasingMode.Fxaa));
+            Assert.That(owner.Current.DisplaySettings, Is.Null);
+        }
+
+        [Test]
+        public void LegacyDisplayJsonWithoutAntiAliasingDefaultsToOff()
+        {
+            var state = JsonUtility.FromJson<RuntimeSettingsState>(
+                "{\"displaySettings\":{\"configured\":true,\"mode\":0,\"width\":1280," +
+                "\"height\":720,\"qualityName\":\"PC\"}}");
+
+            Assert.That(state.DisplaySettings.AntiAliasing, Is.EqualTo(GameAntiAliasingMode.Off));
+            Assert.That(state.DisplaySettings.QualityName, Is.EqualTo("PC"));
+            Assert.That(state.DisplaySettings.TryValidate(out _), Is.True);
+        }
+
+        [Test]
+        public void UnsupportedAntiAliasingFailsSemanticValidation()
+        {
+            var state = new DisplaySettingsState(GameDisplayMode.Windowed,
+                1280, 720, 0, 0, 0, 60, "High", (GameAntiAliasingMode)99);
+
+            Assert.That(state.TryValidate(out var reason), Is.False);
+            Assert.That(reason, Does.Contain("Anti-aliasing"));
+        }
+
+        [Test]
+        public void RejectedDisplayPreviewLeavesOwnerAndRuntimeUnchanged()
+        {
+            var owner = new RuntimeSettingsModel();
+            var baseline = Display(GameDisplayMode.Windowed, 1280, 720, false, 60, "Medium");
+            var candidate = Display(GameDisplayMode.Fullscreen, 3840, 2160, true, 240, "Ultra");
+            var device = new FakeDisplaySettingsDevice(baseline) { RejectNextApply = true };
+            var preview = new DisplaySettingsPreviewSession(owner, device);
+
+            Assert.That(preview.Begin(candidate, 0f), Is.False);
+
+            Assert.That(device.Current, Is.SameAs(baseline));
+            Assert.That(owner.Current.DisplaySettings, Is.Null);
+            Assert.That(preview.IsActive, Is.False);
+        }
+
+        [Test]
+        public void DisplayThatIsNotAcceptedAfterApplyRevertsWithoutCommitting()
+        {
+            var owner = new RuntimeSettingsModel();
+            var baseline = Display(GameDisplayMode.Windowed, 1280, 720, false, 60, "Medium");
+            var candidate = Display(GameDisplayMode.Fullscreen, 1920, 1080, true, 144, "High");
+            var device = new FakeDisplaySettingsDevice(baseline);
+            var preview = new DisplaySettingsPreviewSession(owner, device);
+
+            Assert.That(preview.Begin(candidate, 1f), Is.True);
+            device.ReportMismatch = true;
+            Assert.That(preview.Tick(3f), Is.EqualTo(DisplayPreviewResult.ApplyFailed));
+
+            Assert.That(device.Current, Is.SameAs(baseline));
+            Assert.That(owner.Current.DisplaySettings, Is.Null);
+        }
+
+        [Test]
+        public void InvalidDisplaySettingsFailSemanticValidation()
+        {
+            var owner = new RuntimeSettingsModel();
+            var invalid = new DisplaySettingsState(GameDisplayMode.Windowed,
+                0, 720, 0, 0, 0, 60, "Medium");
+
+            var result = owner.ValidateRestoreState(new RuntimeSettingsState(displaySettings: invalid));
+
+            Assert.That(result.IsValid, Is.False);
+            Assert.That(result.Reason, Does.Contain("resolution"));
+        }
+
+        private static DisplaySettingsState Display(GameDisplayMode mode, int width, int height,
+            bool vSync, int cap, string quality) =>
+            new DisplaySettingsState(mode, width, height, 0, 0, vSync ? 1 : 0, cap, quality);
+
+        private sealed class FakeDisplaySettingsDevice : IDisplaySettingsDevice
+        {
+            public FakeDisplaySettingsDevice(DisplaySettingsState current) => Current = current;
+
+            public DisplaySettingsState Current { get; private set; }
+            public bool RejectNextApply { get; set; }
+            public bool ReportMismatch { get; set; }
+            public int ApplyCount { get; private set; }
+
+            public DisplaySettingsState CaptureCurrent() => Current;
+
+            public bool TryApply(DisplaySettingsState settings, out string reason)
+            {
+                ApplyCount++;
+                if (RejectNextApply)
+                {
+                    RejectNextApply = false;
+                    reason = "Simulated unsupported display mode.";
+                    return false;
+                }
+                Current = settings;
+                reason = string.Empty;
+                return true;
+            }
+
+            public bool Matches(DisplaySettingsState settings) =>
+                !ReportMismatch && ReferenceEquals(Current, settings);
         }
 
         [Test]
@@ -488,6 +725,72 @@ namespace Setus.HorrorFramework.Tests.EditMode.Accessibility
 
             Assert.That(recreated.Current.InputBindingOverridesJson, Is.EqualTo(overridesJson));
             Assert.That(recreated.ValidateRestoreState(recreated.Current).IsValid, Is.True);
+        }
+
+        [Test]
+        public void DisplaySettingsPersistWithoutAGameplaySlot()
+        {
+            var settingsPath = GetSettingsPath();
+            var display = new DisplaySettingsState(GameDisplayMode.Borderless,
+                2560, 1440, 0, 0, 1, 144, "High");
+            var first = new RuntimeSettingsModel(new PersistentUserSettingsStore(settingsPath));
+            first.SetDisplaySettings(display);
+            first.Flush();
+
+            var recreated = new RuntimeSettingsModel(new PersistentUserSettingsStore(settingsPath));
+
+            Assert.That(recreated.LoadStatus, Is.EqualTo(UserSettingsLoadStatus.Loaded));
+            Assert.That(recreated.Current.DisplaySettings, Is.Not.Null);
+            Assert.That(recreated.Current.DisplaySettings.Mode, Is.EqualTo(GameDisplayMode.Borderless));
+            Assert.That(recreated.Current.DisplaySettings.Width, Is.EqualTo(2560));
+            Assert.That(recreated.Current.DisplaySettings.Height, Is.EqualTo(1440));
+            Assert.That(recreated.Current.DisplaySettings.VSyncCount, Is.EqualTo(1));
+            Assert.That(recreated.Current.DisplaySettings.FrameRateCap, Is.EqualTo(144));
+            Assert.That(recreated.Current.DisplaySettings.QualityName, Is.EqualTo("High"));
+        }
+
+        [Test]
+        public void ExistingSettingsDocumentWithoutDisplayProfileRemainsCompatible()
+        {
+            var settingsPath = GetSettingsPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(settingsPath));
+            File.WriteAllText(settingsPath,
+                "{\"formatVersion\":1,\"settings\":{" +
+                "\"masterVolume\":1,\"mouseSensitivity\":1,\"subtitlesEnabled\":true," +
+                "\"ambienceVolume\":1,\"sfxVolume\":1,\"uiVolume\":1,\"voiceVolume\":1," +
+                "\"brightness\":0.5,\"cameraShakeIntensity\":1,\"headBobEnabled\":true," +
+                "\"headBobIntensity\":1,\"sprintInputMode\":0,\"localeCode\":\"en\"," +
+                "\"inputBindingOverridesJson\":\"\"}}");
+
+            var recreated = new RuntimeSettingsModel(new PersistentUserSettingsStore(settingsPath));
+
+            Assert.That(recreated.LoadStatus, Is.EqualTo(UserSettingsLoadStatus.Loaded));
+            Assert.That(recreated.Current.DisplaySettings, Is.Null);
+        }
+
+        [Test]
+        public void ExistingDisplayProfileWithoutConfiguredMarkerRemainsCompatible()
+        {
+            var settingsPath = GetSettingsPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(settingsPath));
+            File.WriteAllText(settingsPath,
+                "{\"formatVersion\":1,\"settings\":{" +
+                "\"masterVolume\":1,\"mouseSensitivity\":1,\"subtitlesEnabled\":true," +
+                "\"ambienceVolume\":1,\"sfxVolume\":1,\"uiVolume\":1,\"voiceVolume\":1," +
+                "\"brightness\":0.5,\"cameraShakeIntensity\":1,\"headBobEnabled\":true," +
+                "\"headBobIntensity\":1,\"sprintInputMode\":0,\"localeCode\":\"en\"," +
+                "\"inputBindingOverridesJson\":\"\",\"displaySettings\":{" +
+                "\"mode\":1,\"width\":1920,\"height\":1080," +
+                "\"refreshNumerator\":0,\"refreshDenominator\":0," +
+                "\"vSyncCount\":1,\"frameRateCap\":60,\"qualityName\":\"High\"}}}");
+
+            var recreated = new RuntimeSettingsModel(new PersistentUserSettingsStore(settingsPath));
+
+            Assert.That(recreated.LoadStatus, Is.EqualTo(UserSettingsLoadStatus.Loaded));
+            Assert.That(recreated.Current.DisplaySettings, Is.Not.Null);
+            Assert.That(recreated.Current.DisplaySettings.Mode, Is.EqualTo(GameDisplayMode.Borderless));
+            Assert.That(recreated.Current.DisplaySettings.Width, Is.EqualTo(1920));
+            Assert.That(recreated.Current.DisplaySettings.Height, Is.EqualTo(1080));
         }
 
         private string GetSettingsPath()

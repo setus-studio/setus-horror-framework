@@ -15,6 +15,8 @@ namespace Setus.HorrorFramework.Interaction.Interactors
         [SerializeField] private LayerMask interactionMask = Physics.DefaultRaycastLayers;
         [SerializeField] private QueryTriggerInteraction triggerInteraction = QueryTriggerInteraction.Collide;
         [SerializeField] private InputActionProperty interactAction;
+        [SerializeField] private InputActionAsset actionsAsset;
+        [SerializeField] private string interactActionPath = "Player/Interact";
         [SerializeField] private Key fallbackInteractKey = Key.E;
         [SerializeField] private bool drawDebugRay = true;
         [SerializeField, Min(0f)] private float focusLostGraceSeconds = 0.12f;
@@ -27,6 +29,8 @@ namespace Setus.HorrorFramework.Interaction.Interactors
         private float lastDistance = -1f;
         private float lastFocusSeenAt = float.NegativeInfinity;
         private readonly List<MonoBehaviour> interactableCandidates = new List<MonoBehaviour>(8);
+        private InputAction resolvedInteractAction;
+        private bool enabledInteractAction;
 
         private void Awake()
         {
@@ -53,18 +57,25 @@ namespace Setus.HorrorFramework.Interaction.Interactors
 
         private void OnEnable()
         {
-            if (interactAction.action != null && !interactAction.action.enabled)
+            resolvedInteractAction = actionsAsset != null
+                ? actionsAsset.FindAction(interactActionPath, false)
+                : interactAction.action;
+            enabledInteractAction = resolvedInteractAction != null && !resolvedInteractAction.enabled;
+            if (enabledInteractAction)
             {
-                interactAction.action.Enable();
+                resolvedInteractAction.Enable();
             }
         }
 
         private void OnDisable()
         {
-            if (interactAction.action != null && interactAction.action.enabled)
+            if (enabledInteractAction && resolvedInteractAction != null && resolvedInteractAction.enabled)
             {
-                interactAction.action.Disable();
+                resolvedInteractAction.Disable();
             }
+
+            resolvedInteractAction = null;
+            enabledInteractAction = false;
 
             ClearFocus(true);
         }
@@ -120,13 +131,22 @@ namespace Setus.HorrorFramework.Interaction.Interactors
         public void ConfigureInteractAction(InputAction action)
         {
             interactAction = new InputActionProperty(action);
+            actionsAsset = null;
+        }
+
+        public InputActionAsset ActionsAsset => actionsAsset;
+
+        public void ConfigureActionsAsset(InputActionAsset asset)
+        {
+            actionsAsset = asset;
+            interactActionPath = "Player/Interact";
         }
 
         private bool WasInteractPressed()
         {
-            if (interactAction.action != null && interactAction.action.WasPressedThisFrame())
+            if (resolvedInteractAction != null)
             {
-                return true;
+                return resolvedInteractAction.WasPressedThisFrame();
             }
 
             var keyboard = Keyboard.current;

@@ -70,6 +70,7 @@ namespace Setus.HorrorFramework.Editor.Builders
         {
             StandaloneGameContentTemplate.CreateAt(StandaloneGameContentTemplate.DefaultGameRoot);
             PlayerFoundationTemplateBuilder.BuildDefaultAssets(false);
+            TabbedSettingsLayoutBuilder.EnsurePauseActionAtPath(PlayerFoundationTemplateBuilder.InputActionsPath);
             SceneFlowUiShellTemplateBuilder.BuildDefaultUiShell(false);
 
             var manifest = CreateOrLoadManifest();
@@ -88,6 +89,7 @@ namespace Setus.HorrorFramework.Editor.Builders
             AtmosphereMilestoneBuilder.ApplyM7AtmosphereFoundation();
             EnemyAiMilestoneBuilder.ApplyM8EnemyAiFoundationFromMenu();
             AccessibilityMilestoneBuilder.ApplyFromMenu();
+            GraphicsSettingsMilestoneBuilder.Apply();
 
             gameplay = OpenGameplayScene();
             manifest = LoadManifestOrThrow();
@@ -206,10 +208,11 @@ namespace Setus.HorrorFramework.Editor.Builders
         {
             var environment = GetOrCreateChild(parent, "Room");
             EnsureCube(environment, "Floor", new Vector3(0f, -0.1f, 8f), new Vector3(10f, 0.2f, 30f));
-            EnsureCube(environment, "LeftWall", new Vector3(-5f, 1.5f, 8f), new Vector3(0.2f, 3f, 30f));
-            EnsureCube(environment, "RightWall", new Vector3(5f, 1.5f, 8f), new Vector3(0.2f, 3f, 30f));
-            EnsureCube(environment, "BackWall", new Vector3(0f, 1.5f, -7f), new Vector3(10f, 3f, 0.2f));
-            EnsureCube(environment, "FrontWall", new Vector3(0f, 1.5f, 23f), new Vector3(10f, 3f, 0.2f));
+            const float wallCenterY = 1.45f;
+            EnsureCube(environment, "LeftWall", new Vector3(-5f, wallCenterY, 8f), new Vector3(0.2f, 3f, 30f));
+            EnsureCube(environment, "RightWall", new Vector3(5f, wallCenterY, 8f), new Vector3(0.2f, 3f, 30f));
+            EnsureCube(environment, "BackWall", new Vector3(0f, wallCenterY, -7f), new Vector3(10f, 3f, 0.2f));
+            EnsureCube(environment, "FrontWall", new Vector3(0f, wallCenterY, 23f), new Vector3(10f, 3f, 0.2f));
 
             var lightObject = GetOrCreateChild(environment, "RoomLight").gameObject;
             lightObject.transform.position = new Vector3(0f, 2.6f, 4f);

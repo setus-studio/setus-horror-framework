@@ -130,6 +130,14 @@ namespace Setus.HorrorFramework.UI.Settings.Persistence
                     return false;
                 }
 
+                var display = root["settings"]["displaySettings"];
+                if (display != null && display.Type != JTokenType.Object &&
+                    display.Type != JTokenType.Null)
+                {
+                    diagnostic = "User settings displaySettings must be an object or null.";
+                    return false;
+                }
+
                 var document = JsonUtility.FromJson<UserSettingsDocument>(json);
                 if (document == null || document.formatVersion != CurrentFormatVersion)
                 {

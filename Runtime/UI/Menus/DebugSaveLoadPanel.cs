@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Linq;
 using Setus.HorrorFramework.Core.Services;
 using Setus.HorrorFramework.Debugging.Logging;
@@ -11,6 +12,7 @@ using Setus.HorrorFramework.SceneFlow.Transitions;
 using UnityEngine;
 using UnityEngine.Localization;
 using UnityEngine.Localization.Settings;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -29,6 +31,9 @@ namespace Setus.HorrorFramework.UI.Menus
         private SceneTransitionRunner transitionRunner;
         private SaveLoadCoordinator saveLoad;
         private LocalizedTextReference currentStatus;
+        private AsyncOperationHandle<LocalizationSettings> localizationInitialization;
+        private bool waitingForLocalization;
+        private Coroutine pendingLocalizationRefresh;
 
         private void Awake()
         {
@@ -60,6 +65,15 @@ namespace Setus.HorrorFramework.UI.Menus
             }
 
             RefreshPanelState(context);
+            if (LocalizationSettings.HasSettings)
+            {
+                localizationInitialization = LocalizationSettings.InitializationOperation;
+                if (!localizationInitialization.IsDone)
+                {
+                    waitingForLocalization = true;
+                    localizationInitialization.Completed += OnLocalizationInitialized;
+                }
+            }
         }
 
         private void OnDisable()
@@ -79,6 +93,18 @@ namespace Setus.HorrorFramework.UI.Menus
             if (LocalizationSettings.HasSettings)
             {
                 LocalizationSettings.SelectedLocaleChanged -= OnLocaleChanged;
+            }
+
+            if (waitingForLocalization)
+            {
+                localizationInitialization.Completed -= OnLocalizationInitialized;
+                waitingForLocalization = false;
+            }
+
+            if (pendingLocalizationRefresh != null)
+            {
+                StopCoroutine(pendingLocalizationRefresh);
+                pendingLocalizationRefresh = null;
             }
         }
 
@@ -285,7 +311,37 @@ namespace Setus.HorrorFramework.UI.Menus
 
         private void OnLocaleChanged(Locale _)
         {
-            RenderCurrentStatus();
+            ScheduleLocalizationRefresh();
+        }
+
+        private void OnLocalizationInitialized(AsyncOperationHandle<LocalizationSettings> _)
+        {
+            waitingForLocalization = false;
+            ScheduleLocalizationRefresh();
+        }
+
+        private void ScheduleLocalizationRefresh()
+        {
+            if (!Application.isPlaying)
+            {
+                RenderCurrentStatus();
+                return;
+            }
+
+            if (pendingLocalizationRefresh == null)
+            {
+                pendingLocalizationRefresh = StartCoroutine(RefreshStatusNextFrame());
+            }
+        }
+
+        private IEnumerator RefreshStatusNextFrame()
+        {
+            yield return null;
+            pendingLocalizationRefresh = null;
+            if (isActiveAndEnabled)
+            {
+                RenderCurrentStatus();
+            }
         }
 
         private void ShowCurrentFailure(SaveLoadCoordinator coordinator)

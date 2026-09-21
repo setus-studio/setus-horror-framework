@@ -2,6 +2,7 @@ using NUnit.Framework;
 using System.Reflection;
 using Setus.HorrorFramework.Core.Events;
 using Setus.HorrorFramework.Core.Services;
+using Setus.HorrorFramework.Localization;
 using Setus.HorrorFramework.Player.Controller;
 using Setus.HorrorFramework.Player.Input;
 using Setus.HorrorFramework.Player.State;
@@ -266,7 +267,12 @@ namespace Setus.HorrorFramework.Tests.EditMode.Core
 
             debugSaveLoad.QuickLoad();
 
-            Assert.That(statusText.text, Is.EqualTo("Quick Load is unavailable from the pause menu."));
+            var status = (LocalizedTextReference)typeof(DebugSaveLoadPanel)
+                .GetField("currentStatus", BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(debugSaveLoad);
+            Assert.That(status.EntryKey, Is.EqualTo(FrameworkTextKeys.LoadUnavailableFromPause));
+            Assert.That(status.FallbackText, Is.EqualTo("Quick Load is unavailable from the pause menu."));
+            Assert.That(statusText.text, Is.EqualTo(LocalizationTextResolver.Resolve(status)));
 
             Object.DestroyImmediate(panel);
         }
@@ -295,7 +301,12 @@ namespace Setus.HorrorFramework.Tests.EditMode.Core
                 Is.False);
 
             Assert.That(technicalDiagnostic, Does.Contain("manifest"));
-            Assert.That(statusText.text, Is.EqualTo("Save and load are currently unavailable."));
+            var status = (LocalizedTextReference)typeof(DebugSaveLoadPanel)
+                .GetField("currentStatus", BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(saveLoadPanel);
+            Assert.That(status.EntryKey, Is.EqualTo(FrameworkTextKeys.SaveErrorUnavailable));
+            Assert.That(status.FallbackText, Is.EqualTo("Save and load are currently unavailable."));
+            Assert.That(statusText.text, Is.EqualTo(LocalizationTextResolver.Resolve(status)));
             Assert.That(statusText.text, Does.Not.Contain("manifest"));
 
             Object.DestroyImmediate(panel);

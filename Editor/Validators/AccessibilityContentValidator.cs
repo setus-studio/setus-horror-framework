@@ -8,13 +8,19 @@ using Setus.HorrorFramework.Narrative.Notes;
 using Setus.HorrorFramework.Narrative.Objectives;
 using Setus.HorrorFramework.Narrative.Phone;
 using Setus.HorrorFramework.Atmosphere.Scares;
+using Setus.HorrorFramework.Atmosphere.Audio;
+using Setus.HorrorFramework.Audio.Settings;
+using Setus.HorrorFramework.AI.Feedback;
 using Setus.HorrorFramework.AI.Tuning;
+using Setus.HorrorFramework.Interaction.Interactors;
 using Setus.HorrorFramework.UI.Menus;
 using Setus.HorrorFramework.UI.Settings;
+using Setus.HorrorFramework.UI.Settings.Display;
 using UnityEditor;
 using UnityEditor.Localization;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
@@ -74,6 +80,8 @@ namespace Setus.HorrorFramework.Editor.Validators
                 ValidateUiShellReferences(shell, textTable, issues);
             }
 
+            ValidateGraphicsSettings(issues);
+
             var player = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerFoundationTemplateBuilder.PlayerPrefabPath);
             var playerCamera = player != null ? player.GetComponentInChildren<UnityEngine.Camera>(true) : null;
             var cameraData = playerCamera != null
@@ -87,6 +95,24 @@ namespace Setus.HorrorFramework.Editor.Validators
             {
                 issues.Add(
                     "Canonical player Camera must enable URP post-processing for the brightness Volume setting.");
+            }
+            else if (playerCamera.GetComponent<PlayerCameraAntiAliasingApplier>() == null)
+            {
+                issues.Add($"Owner '{Describe(playerCamera)}', field 'PlayerCameraAntiAliasingApplier': saved anti-aliasing needs a camera-local runtime applier.");
+            }
+
+            if (shell != null && shell.GetComponentInChildren<TabbedSettingsPresenter>(true) != null &&
+                player != null)
+            {
+                var rebind = shell.GetComponentInChildren<InputRebindPresenter>(true);
+                var rebindActions = rebind != null
+                    ? new SerializedObject(rebind).FindProperty("actions")?.objectReferenceValue as InputActionAsset
+                    : null;
+                var interactor = player.GetComponent<RaycastInteractor>();
+                if (interactor == null || interactor.ActionsAsset == null)
+                    issues.Add($"Owner '{Describe(player)}', field 'RaycastInteractor.actionsAsset': shared Interact action asset is missing.");
+                else if (rebindActions != null && interactor.ActionsAsset != rebindActions)
+                    issues.Add($"Owner '{Describe(player)}', field 'RaycastInteractor.actionsAsset': must match InputRebindPresenter.actions.");
             }
 
             ValidateKeys<ObjectiveDefinition>(
@@ -118,6 +144,57 @@ namespace Setus.HorrorFramework.Editor.Validators
             return issues;
         }
 
+        private static void ValidateGraphicsSettings(ICollection<string> issues)
+        {
+            foreach (var name in new[] { "Low", "Medium", "High" })
+            {
+                var qualityIndex = Array.IndexOf(QualitySettings.names, name);
+                if (qualityIndex < 0)
+                    issues.Add($"Owner 'ProjectSettings/QualitySettings.asset', field 'name': Standalone quality level '{name}' is missing.");
+
+                var path = $"Assets/Game/Settings/Graphics/{name}_RPAsset.asset";
+                var asset = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(path);
+                if (asset == null)
+                    issues.Add($"Owner '{path}', field 'asset': game-owned URP quality asset is missing.");
+                else if (asset.msaaSampleCount != 1)
+                    issues.Add($"Owner '{path}', field 'msaaSampleCount': must be Disabled so Off/FXAA/SMAA do not stack with MSAA.");
+
+                if (qualityIndex >= 0 && asset != null)
+                {
+                    var mappingIssue = ValidateGraphicsQualityPipelineMapping(
+                        name,
+                        path,
+                        asset,
+                        QualitySettings.GetRenderPipelineAssetAt(qualityIndex));
+                    if (!string.IsNullOrEmpty(mappingIssue))
+                        issues.Add(mappingIssue);
+                }
+            }
+        }
+
+        public static string ValidateGraphicsQualityPipelineMapping(
+            string qualityLevel,
+            string expectedPath,
+            RenderPipelineAsset expectedAsset,
+            RenderPipelineAsset actualAsset)
+        {
+            if (expectedAsset != null && expectedAsset == actualAsset)
+                return string.Empty;
+
+            return $"Owner 'ProjectSettings/QualitySettings.asset', quality level '{qualityLevel}', " +
+                $"field 'customRenderPipeline': expected '{DescribePipelineAsset(expectedAsset, expectedPath)}', " +
+                $"actual '{DescribePipelineAsset(actualAsset, null)}'.";
+        }
+
+        private static string DescribePipelineAsset(RenderPipelineAsset asset, string fallbackPath)
+        {
+            if (asset == null)
+                return string.IsNullOrEmpty(fallbackPath) ? "<missing>" : $"<missing> ({fallbackPath})";
+
+            var path = AssetDatabase.GetAssetPath(asset);
+            return string.IsNullOrEmpty(path) ? asset.name : $"{asset.name} ({path})";
+        }
+
         public static IReadOnlyList<string> ValidateUiShellReferences(GameObject shell)
         {
             var issues = new List<string>();
@@ -131,6 +208,15 @@ namespace Setus.HorrorFramework.Editor.Validators
         {
             var issues = new List<string>();
             ValidateGameplayReferences(roots, issues);
+            return issues;
+        }
+
+        public static IReadOnlyList<string> ValidateAudioSettingsReferences(
+            GameObject shell,
+            IEnumerable<GameObject> gameplayRoots)
+        {
+            var issues = new List<string>();
+            ValidateAudioSettingsReferences(shell, gameplayRoots, issues);
             return issues;
         }
 
@@ -186,6 +272,72 @@ namespace Setus.HorrorFramework.Editor.Validators
             else
             {
                 ValidateRequiredReferences(rebind, new[] { "actions", "statusText" }, issues);
+                if (shell.GetComponentInChildren<TabbedSettingsPresenter>(true) != null)
+                {
+                    ValidateRequiredReferences(rebind, new[]
+                    {
+                        "rebindModal", "settingsLayoutGroup", "modalTitle", "modalPrompt",
+                        "modalCurrent", "modalRetry", "modalConfirmReset", "modalCancel"
+                    }, issues);
+                    var serialized = new SerializedObject(rebind);
+                    var labels = serialized.FindProperty("bindingLabels");
+                    if (labels == null || labels.arraySize != 9 ||
+                        Enumerable.Range(0, labels.arraySize)
+                            .Any(index => labels.GetArrayElementAtIndex(index).objectReferenceValue == null))
+                    {
+                        issues.Add($"Owner '{Describe(rebind)}', field 'bindingLabels': nine current-binding labels are required.");
+                    }
+
+                    var actions = serialized.FindProperty("actions")?.objectReferenceValue as InputActionAsset;
+                    if (actions != null)
+                    {
+                        foreach (var path in new[] { "Player/Interact", "Player/Pause" })
+                        {
+                            var action = actions.FindAction(path, false);
+                            if (action == null)
+                                issues.Add($"Owner '{Describe(rebind)}', field 'actions': required action '{path}' is missing.");
+                            else if (!action.bindings.Any(binding =>
+                                !binding.isComposite && !binding.isPartOfComposite &&
+                                !string.IsNullOrEmpty(binding.path) &&
+                                binding.path.StartsWith("<Keyboard>", StringComparison.OrdinalIgnoreCase)))
+                                issues.Add($"Owner '{Describe(rebind)}', field 'actions': action '{path}' requires a keyboard binding for PC rebind.");
+                        }
+                        var pause = shell.GetComponent<PauseInputAdapter>();
+                        var pauseActions = pause != null
+                            ? new SerializedObject(pause).FindProperty("actionsAsset")?.objectReferenceValue
+                            : null;
+                        if (pause == null || pauseActions != actions)
+                            issues.Add($"Owner '{Describe(shell)}', field 'PauseInputAdapter.actionsAsset': must reference InputRebindPresenter.actions.");
+                        else if (!new SerializedObject(pause).FindProperty("escapeTogglesPause").boolValue)
+                            issues.Add($"Owner '{Describe(pause)}', field 'escapeTogglesPause': Escape fallback must remain enabled for safe Pause recovery.");
+                    }
+                }
+            }
+
+            var tabbed = shell.GetComponentInChildren<TabbedSettingsPresenter>(true);
+            if (tabbed != null)
+            {
+                if (shell.GetComponent<DisplaySettingsRuntimeApplier>() == null)
+                    issues.Add($"Owner '{Describe(shell)}', field 'DisplaySettingsRuntimeApplier': saved display preferences require an applier on the UI shell root.");
+
+                var display = shell.GetComponentInChildren<DisplaySettingsPresenter>(true);
+                if (display == null)
+                    issues.Add($"Owner '{Describe(tabbed)}', field 'DisplaySettingsPresenter': Display tab and confirmation presenter are missing.");
+                else
+                    ValidateRequiredReferences(display, new[]
+                    {
+                        "mode", "resolution", "refresh", "vSync", "frameRate", "quality", "antiAliasing",
+                        "status", "apply", "confirmationModal", "countdown", "keep", "revert",
+                        "settingsLayoutGroup"
+                    }, issues);
+
+                var tabbedFields = new SerializedObject(tabbed);
+                var pages = tabbedFields.FindProperty("pages");
+                var tabs = tabbedFields.FindProperty("tabs");
+                if (pages == null || tabs == null || pages.arraySize != 5 || tabs.arraySize != 5 ||
+                    pages.GetArrayElementAtIndex(4).objectReferenceValue == null ||
+                    tabs.GetArrayElementAtIndex(4).objectReferenceValue == null)
+                    issues.Add($"Owner '{Describe(tabbed)}', field 'pages/tabs': Display page and tab must be wired at index 4.");
             }
 
             foreach (var presenter in shell.GetComponentsInChildren<LocalizedTextPresenter>(true))
@@ -272,7 +424,11 @@ namespace Setus.HorrorFramework.Editor.Validators
             try
             {
                 scene = EditorSceneManager.OpenPreviewScene(GameplayScenePath);
-                ValidateGameplayReferences(scene.GetRootGameObjects(), issues);
+                var roots = scene.GetRootGameObjects();
+                ValidateGameplayReferences(roots, issues);
+                var shell = AssetDatabase.LoadAssetAtPath<GameObject>(
+                    SceneFlowUiShellTemplateBuilder.UiShellPrefabPath);
+                ValidateAudioSettingsReferences(shell, roots, issues);
             }
             catch (Exception exception)
             {
@@ -341,6 +497,167 @@ namespace Setus.HorrorFramework.Editor.Validators
                         "values must be finite and minimum must not exceed maximum.");
                 }
             }
+        }
+
+        private static void ValidateAudioSettingsReferences(
+            GameObject shell,
+            IEnumerable<GameObject> gameplayRoots,
+            ICollection<string> issues)
+        {
+            var roots = (gameplayRoots ?? Enumerable.Empty<GameObject>())
+                .Where(root => root != null)
+                .Concat(shell != null ? new[] { shell } : Array.Empty<GameObject>())
+                .Distinct()
+                .ToArray();
+            var consumers = CollectAudioVolumeConsumers(roots);
+
+            foreach (var duplicate in consumers
+                         .Where(consumer => consumer.Source != null)
+                         .GroupBy(consumer => consumer.Source)
+                         .Where(group => group.Count() > 1))
+            {
+                var labels = string.Join(", ", duplicate.Select(consumer =>
+                    $"{consumer.Kind} '{Describe(consumer.Owner)}.{consumer.Field}' [{consumer.Category}]"));
+                issues.Add(
+                    $"Owner '{Describe(duplicate.Key)}', field 'volume': AudioSource has multiple settings " +
+                    $"volume consumers: {labels}. Use exactly one specialized hook or AudioSourceSettingsBinding.");
+            }
+
+            if (shell == null)
+                return;
+
+            ValidateActiveAudioCategory(shell, "MasterVolumeRow", "Master", consumers.Count > 0, issues);
+            ValidateActiveAudioCategory(shell, "AmbienceVolumeRow", nameof(AudioVolumeCategory.Ambience),
+                consumers.Any(consumer => consumer.Category == AudioVolumeCategory.Ambience), issues);
+            ValidateActiveAudioCategory(shell, "SFXVolumeRow", nameof(AudioVolumeCategory.Sfx),
+                consumers.Any(consumer => consumer.Category == AudioVolumeCategory.Sfx), issues);
+            ValidateActiveAudioCategory(shell, "UIVolumeRow", nameof(AudioVolumeCategory.Ui),
+                consumers.Any(consumer => consumer.Category == AudioVolumeCategory.Ui), issues);
+            ValidateActiveAudioCategory(shell, "VoiceVolumeRow", nameof(AudioVolumeCategory.Voice),
+                consumers.Any(consumer => consumer.Category == AudioVolumeCategory.Voice), issues);
+        }
+
+        private static List<AudioVolumeConsumer> CollectAudioVolumeConsumers(IEnumerable<GameObject> roots)
+        {
+            var consumers = new List<AudioVolumeConsumer>();
+            var seenOwners = new HashSet<Component>();
+            foreach (var root in roots)
+            {
+                foreach (var binding in root.GetComponentsInChildren<AudioSourceSettingsBinding>(true))
+                {
+                    if (!seenOwners.Add(binding)) continue;
+                    var serialized = new SerializedObject(binding);
+                    var source = serialized.FindProperty("source")?.objectReferenceValue as AudioSource;
+                    source ??= binding.GetComponent<AudioSource>();
+                    var category = (AudioVolumeCategory)(serialized.FindProperty("category")?.enumValueIndex ??
+                        (int)AudioVolumeCategory.Sfx);
+                    AddAudioConsumer(consumers, binding, source, category, "source", "generic");
+                }
+
+                foreach (var ambience in root.GetComponentsInChildren<AmbienceLayerController>(true))
+                {
+                    if (!seenOwners.Add(ambience)) continue;
+                    var serialized = new SerializedObject(ambience);
+                    AddAudioConsumer(consumers, ambience,
+                        serialized.FindProperty("lowTensionLayer")?.objectReferenceValue as AudioSource,
+                        AudioVolumeCategory.Ambience, "lowTensionLayer", "specialized");
+                    AddAudioConsumer(consumers, ambience,
+                        serialized.FindProperty("highTensionLayer")?.objectReferenceValue as AudioSource,
+                        AudioVolumeCategory.Ambience, "highTensionLayer", "specialized");
+                }
+
+                foreach (var scare in root.GetComponentsInChildren<ScareAudioCueHook>(true))
+                {
+                    if (!seenOwners.Add(scare)) continue;
+                    AddAudioConsumer(consumers, scare,
+                        new SerializedObject(scare).FindProperty("cueSource")?.objectReferenceValue as AudioSource,
+                        AudioVolumeCategory.Sfx, "cueSource", "specialized");
+                }
+
+                foreach (var feedback in root.GetComponentsInChildren<StalkerAiFeedbackHook>(true))
+                {
+                    if (!seenOwners.Add(feedback)) continue;
+                    AddAudioConsumer(consumers, feedback,
+                        new SerializedObject(feedback).FindProperty("cueSource")?.objectReferenceValue as AudioSource,
+                        AudioVolumeCategory.Sfx, "cueSource", "specialized");
+                }
+            }
+            return consumers;
+        }
+
+        private static void AddAudioConsumer(
+            ICollection<AudioVolumeConsumer> consumers,
+            Component owner,
+            AudioSource source,
+            AudioVolumeCategory category,
+            string field,
+            string kind)
+        {
+            if (source != null)
+                consumers.Add(new AudioVolumeConsumer(owner, source, category, field, kind));
+        }
+
+        private static void ValidateActiveAudioCategory(
+            GameObject shell,
+            string rowName,
+            string category,
+            bool hasConsumer,
+            ICollection<string> issues)
+        {
+            var activeRows = shell.GetComponentsInChildren<Transform>(true)
+                .Where(transform => transform.name == rowName && IsAudioControlActive(transform))
+                .ToArray();
+            if (activeRows.Length == 0 || hasConsumer)
+                return;
+
+            foreach (var row in activeRows)
+            {
+                issues.Add(
+                    $"Owner '{Describe(row.gameObject)}', field '{category} audio category': active settings " +
+                    "control requires a matching volume consumer. Hidden or disabled optional controls are allowed.");
+            }
+        }
+
+        private static bool IsAudioControlActive(Transform row)
+        {
+            if (row == null || !row.gameObject.activeSelf)
+                return false;
+
+            return row.GetComponentsInChildren<UnityEngine.UI.Slider>(true).Any(slider =>
+                slider != null && slider.enabled && slider.interactable &&
+                IsActiveWithinRow(slider.transform, row));
+        }
+
+        private static bool IsActiveWithinRow(Transform current, Transform row)
+        {
+            while (current != null)
+            {
+                if (!current.gameObject.activeSelf)
+                    return false;
+                if (current == row)
+                    return true;
+                current = current.parent;
+            }
+            return false;
+        }
+
+        private sealed class AudioVolumeConsumer
+        {
+            public AudioVolumeConsumer(Component owner, AudioSource source, AudioVolumeCategory category,
+                string field, string kind)
+            {
+                Owner = owner;
+                Source = source;
+                Category = category;
+                Field = field;
+                Kind = kind;
+            }
+
+            public Component Owner { get; }
+            public AudioSource Source { get; }
+            public AudioVolumeCategory Category { get; }
+            public string Field { get; }
+            public string Kind { get; }
         }
 
         private static string Describe(Component component)
@@ -498,6 +815,11 @@ namespace Setus.HorrorFramework.Editor.Validators
                 FrameworkTextKeys.RebindReset,
                 FrameworkTextKeys.RebindUpdated,
                 FrameworkTextKeys.RebindCancelled,
+                FrameworkTextKeys.DisplayAntiAliasing,
+                FrameworkTextKeys.DisplayAaOff,
+                FrameworkTextKeys.DisplayQualityLow,
+                FrameworkTextKeys.DisplayQualityMedium,
+                FrameworkTextKeys.DisplayQualityHigh,
                 FrameworkTextKeys.SaveErrorNoSave,
                 FrameworkTextKeys.SaveErrorCorrupt,
                 FrameworkTextKeys.SaveErrorIncompatible,
